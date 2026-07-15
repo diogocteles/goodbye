@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Path to Success — Growth Team</title>
+<meta name="description" content="I'm leaving Growth. In lieu of a card, I turned our enrollment chart into a motorcycle game.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Path to Success — Growth Team">
+<meta property="og:description" content="I'm leaving Growth. In lieu of a card, I turned our enrollment chart into a motorcycle game.">
+<meta property="og:image" content="og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Path to Success — Growth Team">
+<meta name="twitter:description" content="I'm leaving Growth. In lieu of a card, I turned our enrollment chart into a motorcycle game.">
+<meta name="twitter:image" content="og.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0a0a0a; }
+  body { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  canvas { display: block; touch-action: none; }
+  #mute {
+    position: fixed; right: 18px; bottom: 18px; z-index: 10;
+    background: transparent; color: #7a7a7a;
+    border: 1px dashed #3a3a3a; border-radius: 999px;
+    font-family: inherit; font-size: 10px; letter-spacing: 2px;
+    padding: 8px 14px; cursor: pointer;
+  }
+  #mute:hover { color: #fff; border-color: #fff; }
+  #mute:focus-visible { outline: 1.5px solid #fff; outline-offset: 3px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="mute" aria-label="Toggle sound">SOUND OFF</button>
+<script>
+'use strict';
+/* ============================================================
+   PATH TO SUCCESS — a celebration of the Growth Team
+   Ride the enrollment curve, Jul '23 → Jul '26.
+   One input: hold to accelerate.
+   ============================================================ */
+
+/* ---------- DATA: weekly enrollments, digitized from the chart ---------- */
+const DATA = [
+  // JUL '23
+  184, 271, 495, 872, 1289, 1600, 1749, 2218, 2769, 2575, 3346, 2636, 3074,
+  // OCT '23
+  2201, 1937, 2918, 3528, 2206, 1888, 2692, 2136, 1858, 1550, 1925, 2312, 2505,
+  // JAN '24
+  2812, 3243, 4064, 5048, 3955, 3659, 3057, 4239, 4243, 3816, 3318, 3501, 3419,
+  // APR '24
+  2974, 2841, 2505, 3157, 2767, 2431, 2591, 2698, 3155, 3129, 2596, 2871, 3050,
+  // JUL '24
+  2712, 2934, 3106, 3421, 4283, 3796, 3270, 3106, 2856, 2877, 3244, 3562, 3818,
+  // OCT '24
+  4591, 4587, 3403, 4048, 4131, 3246, 2958, 2767, 3510, 3892, 4104, 4368, 4652,
+  // JAN '25
+  3403, 2916, 3184, 3958, 4948, 4793, 5331, 4831, 6787, 6289, 6362, 5595, 5364,
+  // APR '25
+  8185, 6878, 9915, 7598, 5895, 5364, 5595, 6217, 6362, 8998, 8126, 7639, 8816,
+  // JUL '25
+  10514, 12770, 9155, 9758, 8683, 9770, 9328, 8126, 7639, 8816, 7066, 6112, 5941,
+  // OCT '25
+  7224, 7817, 7309, 6541, 6703, 6169, 5941, 5031, 4241, 4597, 5595, 7758, 7458,
+  // JAN '26
+  9882, 11622, 12904, 10778, 10187, 9339, 9943, 8930, 7932, 8234, 7181, 7064, 6270,
+  // APR '26
+  7066, 6541, 6875, 7420, 6980, 7360, 7120, 6840, 7280, 7560, 7835, 7412, 6208,
+  // JUL '26
+  4429
+];
+const N = DATA.length; // 157 weeks
+const RECORD_WEEKS = [4, 8, 16, 29, 84, 86, 91, 93, 105, 132]; // all-time highs
+const MILESTONE_WEEK = 65; // Oct '24 — the new growth team is formed
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const START_DATE = new Date(2023, 6, 3); // first enrolled week
+const TOTAL_ENROLLMENTS = DATA.reduce((a, b) => a + b, 0);
+const PEAK = Math.max(...DATA);
+
+function weekDate(w) {
+  const d = new Date(START_DATE.getTime() + w * 7 * 864e5);
+  return MONTHS[d.getMonth()] + " '" + String(d.getFullYear()).slice(2);
+}
+function fmt(n) { return Math.round(n).toLocaleString('en-US'); }
+
+/* ---------- palette (from the chart legend + refs) ---------- */
+const ACCENT = '#ffffff';
+const RIDER_RED = '#E8483F';
+const BRAND = ['#F2808A', '#A8CDF0', '#5B9FE3', '#c9e4ff', '#ffffff'];
+
+/* ---------- world tuning ---------- */
+const SPACING = 130;               // px per week
+const V_SCALE = 0.135;             // px per enrollment
+const WORLD_LEN = (N - 1) * SPACING;
+const SOLID_END_W = 153;           // last complete data week — beyond is the hopeful projection
+const SOLID_END_X = SOLID_END_W * SPACING;
+const RUNWAY = 1400;               // flat lead-in before week 0
+const RAMP = 950;                  // launch ramp after the last week
+const GRAV = 1550;
+const ACC = 980;
+const DRAG = 1.15;
+const ASSIST_V = 130;              // unfailable: minimum climb speed under throttle
+
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- heightfield ---------- */
+// smooth the ride surface (2 passes) but keep raw data for labels/odometer
+let sm = DATA.slice();
+for (let p = 0; p < 2; p++) {
+  const t = sm.slice();
+  for (let i = 1; i < N - 1; i++) sm[i] = t[i-1] * .25 + t[i] * .5 + t[i+1] * .25;
+}
+const HF_STEP = 8;
+const HF_X0 = -RUNWAY;
+const HF_LEN = Math.ceil((RUNWAY + WORLD_LEN + RAMP + 600) / HF_STEP) + 2;
+const HF = new Float32Array(HF_LEN);
+function catmull(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return .5 * ((2*p1) + (-p0+p2)*t + (2*p0-5*p1+4*p2-p3)*t2 + (-p0+3*p1-3*p2+p3)*t3);
+}
+function smoothAt(i) { return sm[Math.max(0, Math.min(N - 1, i))]; }
+for (let k = 0; k < HF_LEN; k++) {
+  const x = HF_X0 + k * HF_STEP;
+  let v;
+  if (x <= 0) v = sm[0];
+  else if (x >= SOLID_END_X) {
+    // the incomplete tail becomes the path forward: a hopeful climb into the launch
+    const d = x - SOLID_END_X;
+    v = sm[SOLID_END_W] + (d * d) / RAMP * 3.2;
+  } else {
+    const f = x / SPACING, i = Math.floor(f), t = f - i;
+    v = catmull(smoothAt(i-1), smoothAt(i), smoothAt(i+1), smoothAt(i+2), t);
+  }
+  HF[k] = -v * V_SCALE; // worldY (up is negative)
+}
+function groundY(x) {
+  const f = (x - HF_X0) / HF_STEP;
+  const i = Math.max(0, Math.min(HF_LEN - 2, Math.floor(f)));
+  const t = Math.max(0, Math.min(1, f - i));
+  return HF[i] + (HF[i+1] - HF[i]) * t;
+}
+function slopeAt(x) {
+  const e = 6;
+  return Math.atan2(groundY(x + e) - groundY(x - e), 2 * e); // screen coords: negative = uphill
+}
+function rawValueAt(x) {
+  const f = Math.max(0, Math.min(N - 1, x / SPACING));
+  const i = Math.floor(f), t = f - i;
+  return DATA[i] + (DATA[Math.min(N-1, i+1)] - DATA[i]) * t;
+}
+
+/* ---------- canvas ---------- */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(2, devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+}
+addEventListener('resize', resize); resize();
+
+function mono(px, weight) { ctx.font = (weight || '') + ' ' + px + 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace'; }
+
+/* ---------- deterministic hash for ambient dust ---------- */
+function hash(a, b, c) {
+  let h = a * 374761393 + b * 668265263 + c * 2147483647;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+}
+
+/* ---------- audio ---------- */
+const AU = {
+  ctx: null, master: null, engOsc: null, engSub: null, engGain: null, engFilter: null,
+  muted: true, ready: false,
+  init() {
+    if (this.ready) return;
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0;
+      this.master.connect(this.ctx.destination);
+      // engine
+      this.engOsc = this.ctx.createOscillator(); this.engOsc.type = 'sawtooth';
+      this.engSub = this.ctx.createOscillator(); this.engSub.type = 'sine';
+      this.engFilter = this.ctx.createBiquadFilter(); this.engFilter.type = 'lowpass';
+      this.engFilter.frequency.value = 400; this.engFilter.Q.value = 2;
+      this.engGain = this.ctx.createGain(); this.engGain.gain.value = 0;
+      this.engOsc.connect(this.engFilter); this.engSub.connect(this.engFilter);
+      this.engFilter.connect(this.engGain); this.engGain.connect(this.master);
+      this.engOsc.start(); this.engSub.start();
+      // shared noise buffer for hats/claps
+      const nLen = Math.ceil(this.ctx.sampleRate * 0.09);
+      this.hatBuf = this.ctx.createBuffer(1, nLen, this.ctx.sampleRate);
+      const hd = this.hatBuf.getChannelData(0);
+      for (let i = 0; i < nLen; i++) hd[i] = Math.random() * 2 - 1;
+      this.ready = true;
+      this.setMuted(this.muted);
+    } catch (e) { /* audio unavailable; ride on */ }
+  },
+
+  /* ---- the Moroder engine: driving 16th-note disco synth ---- */
+  musicOn: false, mStep: 0, mNextT: 0,
+  startMusic() {
+    if (!this.ready || this.musicOn) return;
+    this.musicOn = true; this.mStep = 0;
+    this.mNextT = this.ctx.currentTime + 0.06;
+  },
+  stopMusic() { this.musicOn = false; },
+  vox(t, freq, dur, type, vol, filtF, filtQ, slideTo) {
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain(), f = this.ctx.createBiquadFilter();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    f.type = 'lowpass'; f.frequency.value = filtF; f.Q.value = filtQ || 1;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f); f.connect(g); g.connect(this.master);
+    o.start(t); o.stop(t + dur + 0.03);
+  },
+  perc(t, dur, vol, filtType, filtF, rate) {
+    const src = this.ctx.createBufferSource(); src.buffer = this.hatBuf;
+    src.playbackRate.value = rate || 1;
+    const f = this.ctx.createBiquadFilter(); f.type = filtType; f.frequency.value = filtF;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + dur + 0.02);
+  },
+  playStep(s, t, s16) {
+    const bar = (s >> 4) & 3, st = s & 15;
+    const root = [55.0, 43.65, 65.41, 49.0][bar]; // Am F C G
+    const tones = [
+      [220, 261.63, 329.63, 440],
+      [174.61, 220, 261.63, 349.23],
+      [196, 261.63, 329.63, 392],
+      [196, 246.94, 293.66, 392]
+    ][bar];
+    // four-on-the-floor kick
+    if (st % 4 === 0) this.vox(t, 155, 0.16, 'sine', 0.42, 900, 1, 44);
+    // offbeat hats, open at the bar turn
+    if (st % 4 === 2) this.perc(t, st === 14 ? 0.16 : 0.05, 0.055, 'highpass', 7800, 1.4);
+    // relentless 16th octave bass — the Moroder signature
+    this.vox(t, root * (st % 2 ? 4 : 2), s16 * 0.92, 'sawtooth', 0.13, 620 + (st % 8) * 55, 5);
+    // layers arrive as the records fall — the track grows with the chart
+    if (recordsHit >= 1 && [2, 5, 8, 11, 14].includes(st))
+      this.vox(t, tones[(s * 7 >> 2) % 4], 0.14, 'triangle', 0.07, 2400, 1);
+    if (recordsHit >= 4 && (st === 4 || st === 12))
+      this.perc(t, 0.09, 0.07, 'bandpass', 2100, 0.8);
+    if (recordsHit >= 7 && st % 2 === 1)
+      this.vox(t, tones[st % 4] * 2, 0.09, 'triangle', 0.028, 5200, 1);
+  },
+  schedule() {
+    if (!this.ready || !this.musicOn) return;
+    const s16 = 60 / 124 / 4; // 124 BPM, 16th notes
+    while (this.mNextT < this.ctx.currentTime + 0.18) {
+      this.playStep(this.mStep % 64, this.mNextT, s16);
+      this.mStep++;
+      this.mNextT += s16;
+    }
+  },
+  setMuted(m) {
+    this.muted = m;
+    muteBtn.textContent = m ? 'SOUND OFF' : 'SOUND ON';
+    if (this.ready) this.master.gain.setTargetAtTime(m ? 0 : 0.85, this.ctx.currentTime, 0.05);
+  },
+  engine(speed, throttle, airborne, active) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    const rev = 46 + speed * 0.085 + (airborne ? 34 : 0);
+    this.engOsc.frequency.setTargetAtTime(rev, t, 0.06);
+    this.engSub.frequency.setTargetAtTime(rev * 0.5, t, 0.06);
+    this.engFilter.frequency.setTargetAtTime(260 + speed * 1.5 + (throttle ? 240 : 0), t, 0.08);
+    const g = !active ? 0 : (0.015 + (throttle ? 0.012 : 0) + Math.min(0.012, speed * 0.000012));
+    this.engGain.gain.setTargetAtTime(g, t, 0.09);
+  },
+  tone(freq, when, dur, type, vol, slideTo) {
+    if (!this.ready) return;
+    const t0 = this.ctx.currentTime + when;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type || 'triangle'; o.frequency.setValueAtTime(freq, t0);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol || 0.12, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  },
+  noise(when, dur, vol, hp) {
+    if (!this.ready) return;
+    const t0 = this.ctx.currentTime + when;
+    const len = Math.ceil(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const f = this.ctx.createBiquadFilter(); f.type = hp ? 'highpass' : 'lowpass';
+    f.frequency.value = hp ? 5200 : 900;
+    const g = this.ctx.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t0);
+  },
+  record(idx) {
+    // rising pentatonic arpeggio — each record a step higher
+    const base = 262 * Math.pow(1.0595, Math.min(idx * 2, 16));
+    const scale = [1, 9/8, 5/4, 3/2, 5/3, 2];
+    for (let i = 0; i < 6; i++)
+      this.tone(base * scale[i], i * 0.07, 0.55, 'triangle', 0.11);
+    this.tone(base * 2, 0.44, 0.9, 'sine', 0.09);
+    this.tone(110, 0, 0.3, 'sine', 0.22, 44);   // thump
+    this.noise(0, 0.4, 0.1, true);               // sparkle
+  },
+  whoosh() { this.noise(0, 0.35, 0.08, false); },
+  milestone() {
+    // team fanfare — a warm major rise
+    const seq = [392, 494, 587, 784, 988, 1175];
+    seq.forEach((f, i) => this.tone(f, i * 0.09, 0.75, 'triangle', 0.11));
+    this.tone(131, 0, 0.35, 'sine', 0.2, 62);
+    this.noise(0, 0.5, 0.09, true);
+  },
+  finale() {
+    const chord = [110, 165, 220, 277, 330, 415, 554];
+    chord.forEach((f, i) => {
+      if (!this.ready) return;
+      const t0 = this.ctx.currentTime;
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = i < 2 ? 'sine' : 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.05, t0 + 1.6 + i * 0.22);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 9);
+      o.connect(g); g.connect(this.master);
+      o.start(t0); o.stop(t0 + 9.2);
+    });
+    for (let i = 0; i < 10; i++)
+      this.tone(524 * Math.pow(1.0595, [0,4,7,12,16,12,7,16,12,19][i]), 1.2 + i * 0.16, 0.8, 'sine', 0.05);
+  }
+};
+const muteBtn = document.getElementById('mute');
+muteBtn.addEventListener('click', (e) => { AU.init(); AU.setMuted(!AU.muted); e.currentTarget.blur(); });
+
+/* ---------- particles ---------- */
+const MAXP = REDUCED ? 900 : 2600;
+const pool = [];
+for (let i = 0; i < MAXP; i++) pool.push({ on: false });
+let pCursor = 0;
+function spawn(props) {
+  for (let n = 0; n < MAXP; n++) {
+    pCursor = (pCursor + 1) % MAXP;
+    if (!pool[pCursor].on) {
+      const p = pool[pCursor];
+      p.on = true; p.age = 0; p.orbit = false; p.streak = false; p.grav = 0; p.drag = 0; p.tw = 0;
+      Object.assign(p, props);
+      return p;
+    }
+  }
+  return null;
+}
+
+/* ---------- game state ---------- */
+const bike = {};
+const cam = { x: 0, y: 0, zoom: 1, sq: 1 }; // sq: horizontal squash for the compact zoomed-out chart
+let state, tGlobal = 0, timeScale = 1, timeScaleTarget = 1;
+let throttle = false, holdTime = 0;
+let trauma = 0, flash = 0;
+let milestoneHit = false;
+let nextRec = 0, recordsHit = 0, shownValue = 0;
+const cards = [];        // screen-pinned celebration cards {kind?, value, date, t}
+const rings = [];        // {x, y, t, big}
+const conquered = [];    // record/milestone markers already celebrated
+let finale = { t: 0, phase: 0, vortexX: 0, vortexY: 0 };
+let titleT = 0;
+
+// debug hooks for verification: ?start=<week>&auto=1
+const qp = new URLSearchParams(location.search);
+const DBG_AUTO = qp.get('auto') === '1';
+const DBG_START = parseInt(qp.get('start') || '-1', 10);
+
+function reset(toRide) {
+  bike.x = -RUNWAY + 260;
+  bike.y = groundY(bike.x);
+  bike.v = 0; bike.vx = 0; bike.vy = 0;
+  bike.angle = 0; bike.grounded = true; bike.dist = 0;
+  nextRec = 0; recordsHit = 0; shownValue = DATA[0]; milestoneHit = false;
+  cards.length = 0; rings.length = 0; conquered.length = 0;
+  for (const p of pool) p.on = false;
+  trauma = 0; flash = 0; timeScale = 1; timeScaleTarget = 1;
+  finale = { t: 0, phase: 0, vortexX: 0, vortexY: 0 };
+  state = toRide ? 'ride' : 'title';
+  titleT = 0;
+  if (DBG_START >= 0) {
+    bike.x = DBG_START * SPACING;
+    bike.y = groundY(bike.x);
+    while (nextRec < RECORD_WEEKS.length && RECORD_WEEKS[nextRec] * SPACING < bike.x) {
+      const w = RECORD_WEEKS[nextRec];
+      conquered.push({ x: w * SPACING, y: groundY(w * SPACING), value: DATA[w], date: weekDate(w) });
+      nextRec++; recordsHit++;
+    }
+    if (MILESTONE_WEEK * SPACING < bike.x) {
+      milestoneHit = true;
+      conquered.push({ x: MILESTONE_WEEK * SPACING, y: groundY(MILESTONE_WEEK * SPACING), kind: 'milestone' });
+    }
+    state = 'ride';
+  }
+  AU.stopMusic();
+  // every run opens on the full zoomed-out chart, then dives in
+  const f = fitCam();
+  cam.x = f.x; cam.y = f.y; cam.zoom = f.z; cam.sq = f.sq;
+}
+function baseZoom() { return Math.min(1, W / 1500); }
+
+/* ---------- input ---------- */
+function press() {
+  AU.init();
+  if (AU.ctx && AU.ctx.state === 'suspended') AU.ctx.resume();
+  throttle = true;
+}
+function release() { throttle = false; }
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowRight') { e.preventDefault(); press(); }
+  if (e.code === 'KeyM') { AU.init(); AU.setMuted(!AU.muted); }
+  if (e.code === 'KeyR') reset(true);
+});
+addEventListener('keyup', (e) => {
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowRight') release();
+});
+cv.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); if (state === 'finale' && finale.phase >= 2 && finale.t > 4) reset(true); });
+addEventListener('pointerup', release);
+addEventListener('pointercancel', release);
+addEventListener('blur', release);
+
+/* ---------- record + milestone celebrations ---------- */
+function burst(cols) {
+  const count = REDUCED ? 50 : 130;
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 160 + Math.random() * 780;
+    spawn({
+      x: bike.x, y: bike.y - 30,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 180,
+      life: 0.9 + Math.random() * 1.4,
+      size: 1.5 + Math.random() * 2.6,
+      color: cols[i % cols.length],
+      grav: 320, drag: 1.6, tw: 4 + Math.random() * 9,
+      streak: Math.random() < 0.3
+    });
+  }
+}
+// one dry aside per record, in ascending order of disbelief
+const QUIPS = [
+  'Four digits. Emotionally, we printed banners.',
+  "We told ourselves we'd stay humble. We did not.",
+  'People began replying to my emails. A first.',
+  'Five thousand. My mother still thinks we sell swords.',
+  'A new high, reached while pretending we planned it.',
+  'Growth so steady it started to look rehearsed.',
+  "Someone said 'hockey stick' and nobody laughed.",
+  'Nearly five digits. I began mentioning it to strangers.',
+  'Twelve thousand. On a Tuesday.',
+  'The all-time high. Do not touch it. Frame it.'
+];
+function celebrate(weekIdx) {
+  const wx = weekIdx * SPACING, wy = groundY(wx);
+  recordsHit++;
+  conquered.push({ x: wx, y: wy, value: DATA[weekIdx], date: weekDate(weekIdx) });
+  cards.push({ value: DATA[weekIdx], date: weekDate(weekIdx), quip: QUIPS[recordsHit - 1] || '', t: 0 });
+  rings.push({ x: bike.x, y: bike.y - 30, t: 0, big: false });
+  trauma = Math.min(1, trauma + 0.55);
+  flash = 0.5;
+  burst(BRAND);
+  AU.record(recordsHit - 1);
+}
+function celebrateMilestone() {
+  milestoneHit = true;
+  const wx = MILESTONE_WEEK * SPACING, wy = groundY(wx);
+  conquered.push({ x: wx, y: wy, kind: 'milestone' });
+  cards.push({ kind: 'milestone', t: 0 });
+  rings.push({ x: bike.x, y: bike.y - 30, t: 0, big: false });
+  trauma = Math.min(1, trauma + 0.5);
+  flash = 0.45;
+  burst(['#F2808A', RIDER_RED, '#ffffff']);
+  AU.milestone();
+}
+
+/* ---------- physics ---------- */
+function stepPhysics(dt) {
+  if (bike.grounded) {
+    const th = slopeAt(bike.x);
+    const sinUp = -Math.sin(th); // positive when climbing
+    let a = (throttle ? ACC : 0) - GRAV * sinUp * 0.62 - DRAG * bike.v;
+    bike.v += a * dt;
+    // unfailable: the invisible team assist
+    if (throttle && bike.v < ASSIST_V) bike.v += (ASSIST_V - bike.v) * 3.5 * dt;
+    if (!throttle && bike.v < -170) bike.v = -170;
+    bike.dist += bike.v * dt;
+    const nx = bike.x + bike.v * Math.cos(th) * dt;
+    const ny = groundY(nx);
+    const fallImplied = ny - bike.y;
+    const maxStick = Math.max(30, Math.abs(bike.v) * dt * 1.9) ;
+    if (fallImplied > maxStick && bike.v > 320) {
+      // ground fell away off a peak — take flight
+      bike.grounded = false;
+      bike.vx = bike.v * Math.cos(th);
+      bike.vy = bike.v * Math.sin(th) - 40;
+      bike.x = nx; bike.y += bike.vy * dt;
+      AU.whoosh();
+    } else {
+      bike.x = Math.max(-RUNWAY + 120, nx);
+      bike.y = groundY(bike.x);
+      bike.angle += (th - bike.angle) * Math.min(1, dt * 14);
+    }
+  } else {
+    bike.vy += GRAV * dt;
+    bike.x += bike.vx * dt;
+    bike.y += bike.vy * dt;
+    const target = Math.atan2(bike.vy, Math.max(120, bike.vx)) * 0.7;
+    bike.angle += (target - bike.angle) * Math.min(1, dt * 3.4);
+    const gy = groundY(bike.x);
+    if (bike.y >= gy) {
+      bike.y = gy; bike.grounded = true;
+      const th = slopeAt(bike.x);
+      bike.v = bike.vx * Math.cos(th) + bike.vy * Math.sin(th);
+      trauma = Math.min(1, trauma + 0.12);
+      AU.whoosh();
+      for (let i = 0; i < 10; i++)
+        spawn({ x: bike.x, y: bike.y, vx: (Math.random()-0.5)*260, vy: -Math.random()*160,
+                life: 0.5, size: 1.6, color: '#888', grav: 400, drag: 2 });
+    }
+  }
+
+  // record + milestone detection
+  while (nextRec < RECORD_WEEKS.length && bike.x >= RECORD_WEEKS[nextRec] * SPACING) {
+    celebrate(RECORD_WEEKS[nextRec]);
+    nextRec++;
+  }
+  if (!milestoneHit && bike.x >= MILESTONE_WEEK * SPACING) celebrateMilestone();
+
+  // trail particles
+  const speed = bike.grounded ? Math.abs(bike.v) : Math.hypot(bike.vx, bike.vy);
+  if (speed > 60) {
+    const nSpawn = REDUCED ? 1 : (speed > 600 ? 3 : 2);
+    for (let i = 0; i < nSpawn; i++) {
+      const back = bike.angle + Math.PI;
+      spawn({
+        x: bike.x + Math.cos(back) * 27 + (Math.random()-0.5)*8,
+        y: bike.y - 11 + Math.sin(back) * 8 + (Math.random()-0.5)*8,
+        vx: Math.cos(back) * (60 + Math.random()*90), vy: -20 - Math.random() * 60,
+        life: 0.7 + Math.random() * 1.1,
+        size: 1.2 + Math.random() * 1.8,
+        color: BRAND[(Math.random() * BRAND.length) | 0],
+        drag: 1.4, grav: -30, tw: 3 + Math.random() * 6
+      });
+    }
+  }
+
+  // finale trigger
+  if (state === 'ride' && bike.x >= WORLD_LEN + 40) {
+    state = 'finale'; finale.t = 0; finale.phase = 0;
+  }
+}
+
+/* ---------- finale sequencing ---------- */
+function stepFinale(dt) {
+  if (finale.phase === 0) {
+    // power up the ramp
+    throttle = true;
+    stepPhysics(dt);
+    if (bike.x >= WORLD_LEN + RAMP - 80 && bike.grounded) {
+      bike.grounded = false;
+      const th = slopeAt(bike.x);
+      const sp = Math.max(bike.v, 900);
+      bike.vx = sp * Math.cos(th); bike.vy = sp * Math.sin(th) - 420;
+      finale.phase = 1; finale.t = 0;
+      finale.vortexX = bike.x + 700; finale.vortexY = bike.y - 620;
+      timeScale = 0.45; timeScaleTarget = 0.45;
+      AU.stopMusic();
+      AU.whoosh(); AU.finale();
+      rings.push({ x: bike.x, y: bike.y, t: 0, big: true });
+      trauma = 0.7; flash = 0.35;
+      // the vortex: orbital streams, like a galaxy of enrollments
+      const nP = REDUCED ? 240 : 720;
+      for (let i = 0; i < nP; i++) {
+        spawn({
+          orbit: true, cx: finale.vortexX, cy: finale.vortexY,
+          a: Math.random() * Math.PI * 2,
+          r: 40 + Math.pow(Math.random(), 0.7) * 420,
+          va: (0.25 + Math.random() * 0.6) * (Math.random() < 0.85 ? 1 : -1),
+          vr: (Math.random() - 0.5) * 14,
+          life: 9999, size: 1.7 + Math.random() * 2.7,
+          color: BRAND[(Math.random() * BRAND.length) | 0],
+          tw: 2 + Math.random() * 6, squash: 0.42, tilt: -0.42
+        });
+      }
+    }
+  } else if (finale.phase === 1) {
+    // drift into the vortex
+    bike.x += (finale.vortexX - bike.x) * dt * 0.9;
+    bike.y += (finale.vortexY - bike.y) * dt * 0.9;
+    bike.angle += (-0.3 - bike.angle) * dt * 2;
+    if (finale.t > 0.8 && finale.t < 2.4 && Math.random() < 0.14)
+      rings.push({ x: finale.vortexX, y: finale.vortexY, t: 0, big: true });
+    if (finale.t > 2.6) {
+      finale.phase = 2; finale.t = 0; timeScaleTarget = 1;
+      // camera pulls out to the full chart — let the vortex dissolve
+      for (const p of pool) if (p.on && p.orbit) p.life = p.age + 2.2;
+    }
+  }
+  // message phase: the zoomed-out chart speaks for itself — no fireworks
+}
+
+/* ---------- particles step ---------- */
+function stepParticles(dt) {
+  for (const p of pool) {
+    if (!p.on) continue;
+    p.age += dt;
+    if (p.age >= p.life) { p.on = false; continue; }
+    if (p.orbit) {
+      p.a += p.va * dt;
+      p.r += p.vr * dt;
+    } else {
+      p.vx -= p.vx * p.drag * dt;
+      p.vy -= p.vy * p.drag * dt;
+      p.vy += p.grav * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+}
+
+/* ---------- camera ---------- */
+// zoomed-out framing: the entire three-year chart, compressed horizontally so
+// the growth reads steep — height is set first, then x squashes to fit
+function fitCam(hFrac) {
+  const z = ((hFrac || 0.32) * H) / (PEAK * V_SCALE);
+  const sq = Math.min(1, (W * 0.92) / ((WORLD_LEN + RUNWAY * 0.4) * z));
+  return { x: WORLD_LEN * 0.5, y: -(0.24 * H) / z, z, sq };
+}
+function stepCamera(dt) {
+  let tx, ty, tz, tsq = 1;
+  if (state === 'title' || (state === 'finale' && finale.phase >= 2)) {
+    // the farewell view runs a touch smaller to leave room for the goodbye letter
+    const f = fitCam(state === 'finale' ? 0.22 : 0.32);
+    tx = f.x; ty = f.y; tz = f.z; tsq = f.sq;
+  } else if (state === 'finale' && finale.phase === 1) {
+    tx = finale.vortexX; ty = finale.vortexY + 40; tz = baseZoom() * 0.68;
+  } else {
+    const sp = bike.grounded ? Math.abs(bike.v) : Math.hypot(bike.vx, bike.vy);
+    tx = bike.x + Math.min(430, 140 + sp * 0.42);
+    ty = bike.y - H * 0.10 / cam.zoom;
+    tz = baseZoom() * Math.max(0.72, 1.02 - sp * 0.00028);
+  }
+  const k = Math.min(1, dt * 3.2);
+  cam.x += (tx - cam.x) * k;
+  cam.y += (ty - cam.y) * k;
+  cam.zoom += (tz - cam.zoom) * Math.min(1, dt * 1.6);
+  cam.sq += (tsq - cam.sq) * Math.min(1, dt * 1.6);
+}
+function viewHalfW() { return W / (2 * cam.zoom * cam.sq); }
+// draw text unsquashed inside the world transform
+function uText(str, x, y) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(1 / cam.sq, 1);
+  ctx.fillText(str, 0, 0); ctx.restore();
+}
+
+/* ============================================================ RENDER */
+function worldToScreen() {
+  const shakeX = trauma * trauma * (Math.random() - 0.5) * 34;
+  const shakeY = trauma * trauma * (Math.random() - 0.5) * 34;
+  ctx.translate(W / 2 + shakeX, H * 0.58 + shakeY);
+  ctx.scale(cam.zoom * cam.sq, cam.zoom);
+  ctx.translate(-cam.x, -cam.y);
+}
+
+function drawBackground() {
+  // parallax dust layers (ref: particle streams on black)
+  const layers = [
+    { d: 0.12, cell: 340, alpha: 0.35, size: 1.0 },
+    { d: 0.3,  cell: 260, alpha: 0.5,  size: 1.3 },
+    { d: 0.55, cell: 220, alpha: 0.7,  size: 1.6 }
+  ];
+  for (let li = 0; li < layers.length; li++) {
+    const L = layers[li];
+    const ox = cam.x * L.d, oy = cam.y * L.d * 0.6;
+    const x0 = Math.floor((ox - W) / L.cell), x1 = Math.ceil((ox + W) / L.cell);
+    const y0 = Math.floor((oy - H) / L.cell), y1 = Math.ceil((oy + H) / L.cell);
+    for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
+      for (let s = 0; s < 2; s++) {
+        const h1 = hash(gx, gy, li * 2 + s);
+        const h2 = hash(gx, gy, li * 2 + s + 77);
+        const px = gx * L.cell + h1 * L.cell - ox + W / 2;
+        const py = gy * L.cell + h2 * L.cell - oy + H / 2;
+        if (px < -10 || px > W + 10 || py < -10 || py > H + 10) continue;
+        const tw = 0.5 + 0.5 * Math.sin(tGlobal * (0.6 + h1 * 1.8) + h2 * 40);
+        ctx.globalAlpha = L.alpha * (0.25 + 0.5 * tw) * 0.5;
+        ctx.fillStyle = h2 > 0.93 ? ACCENT : '#9a9a9a';
+        ctx.fillRect(px, py, L.size, L.size);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// fixed background construction circles (ref: technical diagram)
+const DECO = [];
+for (let i = 0; i < 16; i++) {
+  const h1 = hash(i, 7, 3), h2 = hash(i, 11, 5), h3 = hash(i, 13, 9);
+  DECO.push({
+    x: -800 + (WORLD_LEN + RAMP + 2400) * (i / 15) + (h1 - 0.5) * 600,
+    y: -600 - h2 * 900,
+    r: 60 + h3 * 220,
+    dash: h1 > 0.4, spin: (h2 - 0.5) * 0.3,
+    label: ['47','2A','D6','B8','9B','0C','65','F4'][i % 8]
+  });
+}
+function drawDeco() {
+  const d = 0.72; // parallax depth
+  for (const c of DECO) {
+    const sx = c.x - cam.x * (1 - d) ;
+    const dxs = (sx - cam.x) * cam.zoom * cam.sq;
+    if (Math.abs(dxs) > W * 0.75 + c.r * cam.zoom) continue;
+    ctx.save();
+    ctx.translate(sx, c.y);
+    ctx.rotate(tGlobal * c.spin);
+    ctx.strokeStyle = c.dash ? ACCENT : '#555';
+    ctx.globalAlpha = c.dash ? 0.10 : 0.12;
+    ctx.lineWidth = 1 / cam.zoom;
+    if (c.dash) ctx.setLineDash([5 / cam.zoom, 7 / cam.zoom]);
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = '#666';
+    mono(11 / cam.zoom);
+    ctx.textAlign = 'center';
+    ctx.fillText(c.label, 0, -c.r - 8 / cam.zoom);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawGrid() {
+  // faint horizontal enrollment gridlines
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1 / cam.zoom;
+  mono(10 / cam.zoom);
+  ctx.textAlign = 'left';
+  const viewL = cam.x - viewHalfW(), viewR = cam.x + viewHalfW();
+  for (let v = 2000; v <= 14000; v += 2000) {
+    const y = -v * V_SCALE;
+    ctx.globalAlpha = 0.045;
+    ctx.setLineDash([2 / cam.zoom, 9 / cam.zoom]);
+    ctx.beginPath(); ctx.moveTo(viewL, y); ctx.lineTo(viewR, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.13;
+    ctx.fillStyle = '#777';
+    uText(fmt(v), viewL + 14 / (cam.zoom * cam.sq), y - 5 / cam.zoom);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawTerrain() {
+  const viewL = cam.x - viewHalfW() - 50, viewR = cam.x + viewHalfW() + 50;
+
+  // weekly bars — echo of the original chart (only the completed weeks)
+  const w0 = Math.max(0, Math.floor(viewL / SPACING)), w1 = Math.min(SOLID_END_W, Math.ceil(viewR / SPACING));
+  ctx.lineWidth = Math.max(3, SPACING * 0.42) ;
+  for (let w = w0; w <= w1; w++) {
+    const x = w * SPACING, y = groundY(x);
+    ctx.strokeStyle = BRAND[2];
+    ctx.globalAlpha = 0.055;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, y + 4); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // ridge glow pass + crisp line — solid history up to the last complete week
+  const zoomedOut = state === 'title' || (state === 'finale' && finale.phase >= 2);
+  const step = HF_STEP * 2;
+  const solidR = Math.min(viewR, SOLID_END_X);
+  const kL = Math.max(0, Math.floor((viewL - HF_X0) / step)), kR = Math.min((HF_LEN * HF_STEP / step) - 2, Math.ceil((solidR - HF_X0) / step));
+  if (kR >= kL) {
+    ctx.beginPath();
+    for (let k = kL; k <= kR; k++) {
+      const x = HF_X0 + k * step, y = groundY(x);
+      k === kL ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = ACCENT; ctx.globalAlpha = 0.12; ctx.lineWidth = 7 / cam.zoom; ctx.stroke();
+    ctx.globalAlpha = 0.28; ctx.lineWidth = 3.2 / cam.zoom; ctx.stroke();
+    ctx.globalAlpha = 0.95; ctx.lineWidth = 1.4 / cam.zoom; ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // ...then the dashed path forward, rising into what comes next
+  const dashEnd = Math.min(viewR, zoomedOut ? WORLD_LEN + 420 : WORLD_LEN + RAMP);
+  if (dashEnd > SOLID_END_X && viewR > SOLID_END_X) {
+    ctx.beginPath();
+    for (let x = SOLID_END_X; x <= dashEnd; x += step) {
+      x === SOLID_END_X ? ctx.moveTo(x, groundY(x)) : ctx.lineTo(x, groundY(x));
+    }
+    ctx.strokeStyle = '#fff';
+    ctx.setLineDash([9 / (cam.zoom * cam.sq), 8 / (cam.zoom * cam.sq)]);
+    ctx.globalAlpha = 0.7; ctx.lineWidth = 1.6 / cam.zoom; ctx.stroke();
+    ctx.setLineDash([]);
+    // upward chevrons along the projection
+    ctx.globalAlpha = 0.65; ctx.lineWidth = 1.4 / cam.zoom;
+    for (let i = 1; i <= 2; i++) {
+      const cxw = SOLID_END_X + i * 170;
+      if (cxw > dashEnd) break;
+      const cyw = groundY(cxw) - 26 / cam.zoom;
+      const a = 9 / (cam.zoom * cam.sq), b = 9 / cam.zoom;
+      ctx.beginPath();
+      ctx.moveTo(cxw - a, cyw + b); ctx.lineTo(cxw, cyw); ctx.lineTo(cxw - a, cyw - b);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#bbb'; mono(12 / cam.zoom);
+    if (zoomedOut) {
+      ctx.textAlign = 'right';
+      uText('THE NEXT CLIMB IS YOURS →', dashEnd - 8 / (cam.zoom * cam.sq), groundY(dashEnd) - 26 / cam.zoom);
+    } else {
+      ctx.textAlign = 'left';
+      uText('THE NEXT CLIMB IS YOURS →', SOLID_END_X + 30 / (cam.zoom * cam.sq), groundY(SOLID_END_X) - 52 / cam.zoom);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // weekly data dots on the ridge
+  ctx.fillStyle = ACCENT;
+  for (let w = w0; w <= w1; w++) {
+    const x = w * SPACING, y = groundY(x);
+    ctx.globalAlpha = 0.75;
+    ctx.beginPath(); ctx.arc(x, y, 2.4 / Math.sqrt(cam.zoom), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // baseline + month ticks
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1 / cam.zoom;
+  ctx.setLineDash([3 / cam.zoom, 6 / cam.zoom]);
+  ctx.beginPath(); ctx.moveTo(viewL, 0); ctx.lineTo(viewR, 0); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#777'; mono(12 / cam.zoom); ctx.textAlign = 'center';
+  for (let w = 0; w <= N - 1; w += 13) {
+    const x = w * SPACING;
+    if (x < viewL || x > viewR) continue;
+    ctx.strokeStyle = '#555';
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 10 / cam.zoom); ctx.stroke();
+    ctx.globalAlpha = 0.8;
+    uText(weekDate(w), x, 28 / cam.zoom);
+    ctx.globalAlpha = 1;
+  }
+
+  // conquered record + milestone markers
+  for (const c of conquered) {
+    if (c.x < viewL || c.x > viewR) continue;
+    const mile = c.kind === 'milestone';
+    ctx.strokeStyle = mile ? RIDER_RED : ACCENT;
+    ctx.globalAlpha = mile ? 0.75 : 0.5;
+    ctx.lineWidth = 1 / cam.zoom;
+    ctx.setLineDash([3 / cam.zoom, 4 / cam.zoom]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, 11 / cam.zoom, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = mile ? RIDER_RED : '#999';
+    mono(11 / cam.zoom); ctx.textAlign = 'center';
+    uText(mile ? '★ TEAM FORMED' : fmt(c.value), c.x, c.y - 20 / cam.zoom);
+    ctx.globalAlpha = 1;
+  }
+
+  // ghost concentric rings at upcoming record sites (ref: pulse image)
+  for (let r = nextRec; r < Math.min(nextRec + 2, RECORD_WEEKS.length); r++) {
+    const wx = RECORD_WEEKS[r] * SPACING;
+    if (wx < viewL || wx > viewR) continue;
+    const wy = groundY(wx);
+    const pulse = 0.5 + 0.5 * Math.sin(tGlobal * 2.2);
+    for (let i = 4; i >= 1; i--) {
+      ctx.strokeStyle = i % 2 ? ACCENT : '#888';
+      ctx.globalAlpha = 0.05 * pulse + 0.015;
+      ctx.lineWidth = 1.2 / cam.zoom;
+      ctx.beginPath(); ctx.arc(wx, wy, (14 + i * 16) / cam.zoom * (0.9 + pulse * 0.2), 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawTargetLine() {
+  if (state !== 'ride' || nextRec >= RECORD_WEEKS.length) return;
+  const w = RECORD_WEEKS[nextRec];
+  const val = DATA[w];
+  const y = groundY(w * SPACING);
+  const viewL = cam.x - viewHalfW(), viewR = cam.x + viewHalfW();
+  const pulse = 0.6 + 0.4 * Math.sin(tGlobal * 3);
+  ctx.strokeStyle = '#fff';
+  ctx.globalAlpha = 0.16 * pulse + 0.06;
+  ctx.lineWidth = 1 / cam.zoom;
+  ctx.setLineDash([10 / cam.zoom, 8 / cam.zoom]);
+  ctx.beginPath(); ctx.moveTo(viewL, y); ctx.lineTo(viewR, y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = '#bbb'; mono(12 / cam.zoom); ctx.textAlign = 'right';
+  uText('NEXT RECORD ' + fmt(val) + ' — ' + weekDate(w), viewR - 24 / (cam.zoom * cam.sq), y - 8 / cam.zoom);
+  ctx.globalAlpha = 1;
+}
+
+function drawParticles() {
+  for (const p of pool) {
+    if (!p.on) continue;
+    const lifeF = 1 - p.age / p.life;
+    let px, py;
+    if (p.orbit) {
+      const ca = Math.cos(p.tilt || 0), sa = Math.sin(p.tilt || 0);
+      const ex = Math.cos(p.a) * p.r, ey = Math.sin(p.a) * p.r * (p.squash || 1);
+      px = p.cx + ex * ca - ey * sa;
+      py = p.cy + ex * sa + ey * ca;
+    } else { px = p.x; py = p.y; }
+    const tw = p.tw ? (0.55 + 0.45 * Math.sin(tGlobal * p.tw * 3 + px)) : 1;
+    ctx.globalAlpha = Math.min(1, lifeF * 1.6) * tw;
+    ctx.fillStyle = p.color;
+    if (p.streak && !p.orbit) {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = p.size * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - p.vx * 0.03, py - p.vy * 0.03);
+      ctx.stroke();
+    } else {
+      ctx.fillRect(px - p.size / 2, py - p.size / 2, p.size, p.size);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRings() {
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const r = rings[i];
+    const dur = r.big ? 2.2 : 1.5;
+    if (r.t >= dur) { rings.splice(i, 1); continue; }
+    const f = r.t / dur;
+    const ease = 1 - Math.pow(1 - f, 3);
+    const maxR = (r.big ? 900 : 420) / cam.zoom;
+    const cols = ['#ffffff', ACCENT, BRAND[3], BRAND[0], BRAND[2]];
+    for (let k = 0; k < 5; k++) {
+      const rr = ease * maxR * (0.45 + k * 0.14);
+      ctx.strokeStyle = cols[k];
+      ctx.globalAlpha = (1 - f) * (0.5 - k * 0.07);
+      ctx.lineWidth = (r.big ? 10 : 7) * (1 - f) / cam.zoom + 0.6;
+      ctx.beginPath(); ctx.arc(r.x, r.y, rr, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* celebration cards — pinned to the screen so they stay readable at full speed */
+function drawCards() {
+  for (let i = cards.length - 1; i >= 0; i--) if (cards[i].t > 5) cards.splice(i, 1);
+  cards.forEach((a, i) => {
+    const inF = Math.min(1, a.t * 5);
+    const ease = 1 - Math.pow(1 - inF, 3);
+    const outF = a.t > 4.2 ? Math.max(0, 1 - (a.t - 4.2) / 0.8) : 1;
+    const al = ease * outF;
+    const mile = a.kind === 'milestone';
+    const cw = Math.min(460, W - 32), ch = mile ? 100 : 112;
+    // top-right, clear of the bike (which rides left of center)
+    const x = W - cw - 24 + (1 - ease) * 40, y = 70 + i * (ch + 12);
+    ctx.globalAlpha = al;
+    ctx.fillStyle = 'rgba(10,10,10,0.85)';
+    ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 1;
+    ctx.fillRect(x, y, cw, ch);
+    ctx.strokeRect(x, y, cw, ch);
+    // accent edges
+    ctx.strokeStyle = mile ? RIDER_RED : '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x, y + ch);
+    ctx.moveTo(x + cw, y); ctx.lineTo(x + cw, y + ch);
+    ctx.stroke();
+    const cxx = x + cw / 2;
+    ctx.textAlign = 'center';
+    if (mile) {
+      ctx.fillStyle = RIDER_RED; mono(12);
+      ctx.fillText("★ OCT '24 — MILESTONE ★", cxx, y + 26);
+      ctx.fillStyle = '#fff'; mono(Math.min(24, W * 0.045), '700');
+      ctx.fillText('NEW GROWTH TEAM FORMED', cxx, y + 54);
+      ctx.fillStyle = '#999'; mono(12);
+      ctx.fillText('New people arrived and, alarmingly, they were good.', cxx, y + 82);
+    } else {
+      ctx.fillStyle = '#9a9a9a'; mono(12);
+      ctx.fillText('★ NEW RECORD — ' + a.date, cxx, y + 24);
+      ctx.fillStyle = '#fff'; mono(36, '700');
+      ctx.fillText(fmt(a.value), cxx, y + 60);
+      ctx.fillStyle = '#999'; mono(12);
+      ctx.fillText(a.quip, cxx, y + 92);
+    }
+  });
+  ctx.globalAlpha = 1;
+}
+
+/* the bike: hand-plotted pixel sprite ("fine pixel" design) — crisp integer
+   cells on a 46x30 grid, no anti-aliasing blur. Sprite origin: col 22.5 is
+   the bike's center, row 28.1 is where the tires meet the ground. */
+const BCELL = 1.75; // world px per sprite pixel
+const BP = {
+  px(x, y, c) {
+    ctx.fillStyle = c;
+    ctx.fillRect((Math.round(x) - 19.5) * BCELL, (Math.round(y) - 28.1) * BCELL, BCELL + 0.1, BCELL + 0.1);
+  },
+  line(x0, y0, x1, y1, c, w) {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2 + 1;
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n;
+      this.px(x, y, c);
+      if (w > 1) this.px(x, y - 1, c);
+      if (w > 2) this.px(x + 0.6, y + 1, c);
+    }
+  },
+  ring(cx, cy, r, c) {
+    const n = Math.ceil(r * 9);
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
+      this.px(cx + Math.cos(a) * r, cy + Math.sin(a) * r, c);
+    }
+  },
+  disc(cx, cy, r, c) {
+    for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++)
+      for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++)
+        if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r + 0.4) this.px(x, y, c);
+  },
+  rect(x, y, w, h, c) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) this.px(x + i, y + j, c); }
+};
+
+function drawBikeSprite(ph) {
+  const p = BP;
+  const RED = RIDER_RED, DRED = '#a83226', WHT = '#ffffff',
+        GRY = '#9a9a9a', DGR = '#4d4d4d', DRK = '#1e1e1e';
+  for (const cx of [8, 31]) {
+    p.disc(cx, 21.5, 5.8, '#141414');   // dark tire mass
+    p.ring(cx, 21.5, 6.6, WHT);
+    p.ring(cx, 21.5, 5.9, WHT);          // fat tire, double wall
+    for (let k = 0; k < 2; k++) {
+      const a = ph + k * Math.PI / 2;
+      p.line(cx + Math.cos(a) * 4.2, 21.5 + Math.sin(a) * 4.2,
+             cx - Math.cos(a) * 4.2, 21.5 - Math.sin(a) * 4.2, '#575757', 1);
+    }
+    p.disc(cx, 21.5, 1.1, GRY);          // hub
+  }
+  p.line(9, 20, 15, 18, GRY, 2);         // swingarm
+  p.line(30, 19, 24.5, 11, GRY, 2);      // raked fork
+  p.line(4.5, 17, 13, 16.5, GRY, 2);     // exhaust
+  p.px(3.5, 17, DGR); p.px(3.5, 16, DGR);
+  p.line(4, 15.5, 8, 14, RED, 1);        // rear fender
+  p.line(25, 13.5, 28.5, 14, RED, 2);    // front fender
+  p.line(28.5, 14, 31.5, 15.5, RED, 1);
+  p.rect(9, 13, 13, 3, RED);             // body
+  p.line(7, 11.6, 11, 12.2, RED, 2);     // tail kick
+  p.rect(16, 11.9, 6, 2, RED);           // tank
+  p.px(22.5, 12, RED); p.px(23, 13, RED);
+  p.rect(11, 16, 7, 3, DRK);             // engine
+  p.rect(12.4, 15.7, 4, 1, DRED);
+  p.rect(25.6, 11.4, 2, 2.4, WHT);       // front number plate
+  p.line(24, 10.5, 22.4, 9.4, GRY, 1);   // bars
+  p.px(22, 9, WHT); p.px(21.4, 9.4, WHT);
+  p.line(13.6, 11, 19.4, 5.8, RED, 3);   // torso
+  p.line(19.4, 6.2, 21.6, 9.2, RED, 2);  // arm
+  p.px(22, 10, WHT);                      // glove
+  p.line(14, 12, 16, 15.6, RED, 2);      // thigh
+  p.line(16, 15.6, 18.4, 16.4, RED, 1);  // shin
+  p.rect(18, 16.6, 3, 1.6, DRK);         // boot
+  p.disc(21.2, 3.4, 2.8, WHT);           // helmet
+  p.px(23.8, 3.4, RED); p.px(23.6, 4.4, RED); // visor
+}
+
+function drawBike() {
+  if (state === 'finale' && finale.phase >= 2) return;
+  const fade = (state === 'finale' && finale.phase === 1) ? Math.max(0, 1 - finale.t / 2.2) : 1;
+  ctx.save();
+  ctx.translate(bike.x, bike.y);
+  ctx.rotate(bike.angle);
+  ctx.globalAlpha = fade;
+
+  drawBikeSprite(bike.dist / 11.5);
+
+  // exhaust glow when on throttle
+  if (throttle && state !== 'title') {
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.22 + 0.18 * Math.sin(tGlobal * 40)) * fade + ')';
+    ctx.beginPath(); ctx.arc(-35, -19, 2.6, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/* ---------- HUD ---------- */
+function drawHUD() {
+  if (state === 'title') return;
+  const pad = 22;
+  ctx.textBaseline = 'alphabetic';
+
+  // top-left: date + week
+  const wNow = Math.max(0, Math.min(N - 1, bike.x / SPACING));
+  ctx.fillStyle = '#888'; mono(11); ctx.textAlign = 'left';
+  ctx.fillText('ENROLLED WEEK', pad, pad + 10);
+  ctx.fillStyle = '#fff'; mono(19, '700');
+  ctx.fillText(weekDate(Math.floor(wNow)), pad, pad + 33);
+  ctx.fillStyle = '#666'; mono(11);
+  ctx.fillText('W' + String(Math.floor(wNow)).padStart(3, '0') + ' / ' + (N - 1), pad, pad + 50);
+
+  // top-center: odometer (past the solid data it climbs the projection, capped at the real peak)
+  const target = bike.x > SOLID_END_X
+    ? Math.min(-groundY(bike.x) / V_SCALE, PEAK)
+    : rawValueAt(bike.x);
+  shownValue += (target - shownValue) * 0.09;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#888'; mono(11);
+  ctx.fillText('ENROLLMENTS / WK', W / 2, pad + 10);
+  ctx.fillStyle = ACCENT; mono(30, '700');
+  ctx.fillText(fmt(shownValue), W / 2, pad + 40);
+
+  // top-right: records
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#888'; mono(11);
+  ctx.fillText('RECORDS', W - pad, pad + 10);
+  ctx.fillStyle = recordsHit === RECORD_WEEKS.length ? ACCENT : '#fff'; mono(19, '700');
+  ctx.fillText(recordsHit + ' / ' + RECORD_WEEKS.length, W - pad, pad + 33);
+
+  // bottom progress line with record diamonds + date tracker
+  const bx0 = pad + 10, bx1 = W - pad - 110, by = H - 38;
+  const prog = Math.max(0, Math.min(1, bike.x / WORLD_LEN));
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(bx0, by); ctx.lineTo(bx1, by); ctx.stroke();
+  ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(bx0, by); ctx.lineTo(bx0 + (bx1 - bx0) * prog, by); ctx.stroke();
+  // date ticks so riders can place themselves in the timeline
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+  mono(10); ctx.textAlign = 'center';
+  const tickEvery = W < 700 ? 26 : 13; // quarterly on desktop, biannual on narrow screens
+  for (let w = 0; w <= N - 1; w += tickEvery) {
+    const x = bx0 + (bx1 - bx0) * (w / (N - 1));
+    ctx.beginPath(); ctx.moveTo(x, by + 3); ctx.lineTo(x, by + 8); ctx.stroke();
+    const passed = w / (N - 1) <= prog;
+    ctx.fillStyle = passed ? '#ccc' : '#555';
+    ctx.fillText(weekDate(w), x, by + 21);
+  }
+  RECORD_WEEKS.forEach((w, i) => {
+    const x = bx0 + (bx1 - bx0) * (w / (N - 1));
+    ctx.save(); ctx.translate(x, by); ctx.rotate(Math.PI / 4);
+    if (i < recordsHit) { ctx.fillStyle = ACCENT; ctx.fillRect(-3.4, -3.4, 6.8, 6.8); }
+    else { ctx.strokeStyle = '#777'; ctx.lineWidth = 1; ctx.strokeRect(-3.4, -3.4, 6.8, 6.8); }
+    ctx.restore();
+  });
+  // milestone marker — the week the team was formed
+  {
+    const mx = bx0 + (bx1 - bx0) * (MILESTONE_WEEK / (N - 1));
+    if (milestoneHit) {
+      ctx.fillStyle = RIDER_RED;
+      ctx.beginPath(); ctx.arc(mx, by, 4.4, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.strokeStyle = RIDER_RED; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.arc(mx, by, 4.4, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  // bike position tick
+  const px = bx0 + (bx1 - bx0) * prog;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.moveTo(px, by - 7); ctx.lineTo(px - 4, by - 13); ctx.lineTo(px + 4, by - 13); ctx.closePath(); ctx.fill();
+
+  // hint (fades once moving)
+  if (bike.x < 0 && state === 'ride') {
+    const a = 0.55 + 0.45 * Math.sin(tGlobal * 4);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#aaa'; mono(13); ctx.textAlign = 'center';
+    ctx.fillText('Hold to accelerate. Release to doubt yourself.', W / 2, H - 64);
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ---------- title & finale screens ---------- */
+function drawTitle() {
+  const cx = W / 2, cy = H * 0.32;
+  // construction circles
+  const t = titleT;
+  ctx.save();
+  ctx.translate(cx, cy);
+  const drawIn = Math.min(1, t / 1.8);
+  const circles = [
+    { r: 100, dash: [4, 7], spin: 0.14, col: '#666', a: 0.5 },
+    { r: 135, dash: [1, 9], spin: -0.09, col: '#bbb', a: 0.45 },
+    { r: 170, dash: [30, 24], spin: 0.05, col: '#555', a: 0.4 },
+    { r: 62,  dash: [2, 5], spin: -0.2, col: '#bbb', a: 0.35 }
+  ];
+  for (const c of circles) {
+    ctx.strokeStyle = c.col; ctx.globalAlpha = c.a * drawIn; ctx.lineWidth = 1;
+    ctx.setLineDash(c.dash);
+    ctx.lineDashOffset = tGlobal * 20 * c.spin * 10;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * drawIn); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // crosshair ticks
+  ctx.strokeStyle = '#777'; ctx.globalAlpha = 0.6 * drawIn; ctx.lineWidth = 1;
+  for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * 184, Math.sin(a) * 184);
+    ctx.lineTo(Math.cos(a) * 198, Math.sin(a) * 198);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  const tin = Math.min(1, Math.max(0, (t - 0.5) / 1.2));
+  ctx.globalAlpha = tin;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#888'; mono(12);
+  ctx.fillText('S W O R D   H E A L T H   ·   G R O W T H   ·   A   S E N D - O F F', cx, cy - 58);
+  ctx.fillStyle = '#fff'; mono(Math.min(46, W * 0.055), '700');
+  ctx.fillText('PATH TO SUCCESS', cx, cy + 2);
+  ctx.fillStyle = '#ccc'; mono(13);
+  ctx.fillText("JUL '23 ——»—— JUL '26", cx, cy + 34);
+  ctx.fillStyle = '#999'; mono(13);
+  ctx.fillText('Three years of up-and-to-the-right,', cx, cy + 60);
+  ctx.fillText('rendered here as a motorcycle problem.', cx, cy + 78);
+  ctx.globalAlpha = 1;
+
+  if (t > 1.4) {
+    const pulse = 0.5 + 0.5 * Math.sin(tGlobal * 3.4);
+    ctx.globalAlpha = 0.35 + 0.6 * pulse;
+    ctx.fillStyle = '#fff'; mono(14);
+    ctx.fillText('HOLD  SPACE  /  TOUCH  TO  RIDE', cx, H * 0.92);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function typewrite(str, chars) {
+  return str.slice(0, Math.max(0, Math.floor(chars)));
+}
+function drawFinaleText() {
+  if (finale.phase < 2) return;
+  const t = finale.t;
+  const cx = W / 2;
+  ctx.textAlign = 'center';
+
+  const lines = [
+    "Jul '23 — 184 a week. We celebrated anyway.",
+    "Jul '26 — " + fmt(PEAK) + " a week. We ran out of wall for the banners.",
+    fmt(TOTAL_ENROLLMENTS) + ' enrollments · 10 records · zero shortcuts'
+  ];
+  const cps = 34; // chars per second
+  let clock = t * cps;
+  ctx.fillStyle = '#9a9a9a'; mono(Math.min(14, W * 0.022));
+  for (let i = 0; i < lines.length; i++) {
+    const s = typewrite(lines[i], clock);
+    clock -= lines[i].length + 12;
+    ctx.fillText(s, cx, H * 0.12 + i * 25);
+    if (s.length < lines[i].length) break;
+  }
+
+  const dy = Math.min(54, W * 0.065);
+  const bigDelay = (lines.join('').length + 36) / cps;
+  if (t > bigDelay) {
+    const f = Math.min(1, (t - bigDelay) / 1.1);
+    const ease = 1 - Math.pow(1 - f, 3);
+    // slow breathing ring pulses behind the message (ref: concentric pulse)
+    const rcy = H * 0.30 + dy * 0.5;
+    for (let k = 0; k < 4; k++) {
+      const ph = (tGlobal * 0.22 + k * 0.25) % 1;
+      ctx.strokeStyle = k % 2 ? '#c9e4ff' : '#ffffff';
+      ctx.globalAlpha = (1 - ph) * 0.09 * ease;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(cx, rcy, ph * W * 0.34 + 40, (ph * W * 0.34 + 40) * 0.42, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = ease;
+    ctx.fillStyle = '#fff';
+    mono(Math.min(46, W * 0.055), '700');
+    ctx.fillText('THANK YOU,', cx, H * 0.30);
+    ctx.fillText('GROWTH TEAM', cx, H * 0.30 + dy);
+    // dashed ellipse flourish
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.globalAlpha = ease * 0.45;
+    ctx.setLineDash([5, 8]); ctx.lineDashOffset = -tGlobal * 30;
+    ctx.beginPath();
+    ctx.ellipse(cx, H * 0.30 + dy * 0.5, Math.min(320, W * 0.38) * ease, Math.min(88, W * 0.1) * ease, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+  // the goodbye letter, one line at a time
+  const goodbye = [
+    "I'm leaving, which I announce as though these numbers were ever mine.",
+    'They were yours. I mostly stood nearby, nodding meaningfully.',
+    "The dotted line at the end isn't unfinished. It's just your part now."
+  ];
+  for (let i = 0; i < goodbye.length; i++) {
+    const start = bigDelay + 1.3 + i * 0.9;
+    if (t < start) break;
+    ctx.globalAlpha = Math.min(1, (t - start) / 0.8) * 0.85;
+    ctx.fillStyle = '#bbb'; mono(Math.min(13.5, W * 0.02));
+    ctx.fillText(goodbye[i], cx, H * 0.475 + i * 24);
+  }
+  if (t > bigDelay + 1.3 + goodbye.length * 0.9 + 0.5) {
+    ctx.globalAlpha = Math.min(1, (t - (bigDelay + 1.3 + goodbye.length * 0.9 + 0.5)) / 0.8) * 0.7;
+    ctx.fillStyle = '#8a8a8a'; mono(12);
+    ctx.fillText('— your departing SVP of Growth, taking credit one final time', cx, H * 0.475 + goodbye.length * 24 + 30);
+    const pulse = 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(tGlobal * 3));
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#888'; mono(12);
+    ctx.fillText('PRESS R OR TAP — RIDE IT AGAIN', cx, H * 0.94);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ---------- vignette (prebaked) ---------- */
+let vign = null;
+function makeVignette() {
+  vign = document.createElement('canvas');
+  vign.width = W; vign.height = H;
+  const vctx = vign.getContext('2d');
+  const g = vctx.createRadialGradient(W/2, H/2, Math.min(W,H) * 0.42, W/2, H/2, Math.hypot(W,H) * 0.62);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.55)');
+  vctx.fillStyle = g; vctx.fillRect(0, 0, W, H);
+}
+addEventListener('resize', makeVignette);
+
+/* ---------- main loop ---------- */
+let lastT = performance.now();
+let acc = 0;
+const FIXED = 1 / 120;
+
+function update(rawDt) {
+  tGlobal += rawDt;
+
+  if (DBG_AUTO && state !== 'finale') throttle = true;
+
+  // ease timescale back to target
+  timeScale += (timeScaleTarget - timeScale) * Math.min(1, rawDt * 2.4);
+  const dt = rawDt * timeScale;
+
+  // state transitions
+  if (state === 'title') {
+    titleT += rawDt;
+    if (throttle) holdTime += rawDt; else holdTime = 0;
+    if (holdTime > 0.12 && titleT > 0.8) { state = 'ride'; rideInT = 0; }
+  }
+  if (state === 'ride' || (state === 'finale')) {
+    acc += dt;
+    let guard = 0;
+    while (acc >= FIXED && guard++ < 12) {
+      if (state === 'finale') stepFinale(FIXED);
+      else stepPhysics(FIXED);
+      acc -= FIXED;
+    }
+    if (state === 'finale') finale.t += rawDt; // wall-clock for sequencing
+  }
+  stepParticles(dt);
+  stepCamera(rawDt);
+  for (const r of rings) r.t += rawDt;
+  for (const a of cards) a.t += rawDt;
+  trauma = Math.max(0, trauma - rawDt * (REDUCED ? 3 : 1.6));
+  if (REDUCED) trauma = Math.min(trauma, 0.25);
+  flash = Math.max(0, flash - rawDt * 1.8);
+
+  const sp = bike.grounded ? Math.abs(bike.v) : Math.hypot(bike.vx, bike.vy);
+  AU.engine(sp, throttle, !bike.grounded, state === 'ride' || (state === 'finale' && finale.phase === 0));
+  // the disco runs while we ride; the launch hands over to the farewell chord
+  if ((state === 'ride' || (state === 'finale' && finale.phase === 0)) && AU.ready) AU.startMusic();
+  AU.schedule();
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const rawDt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+  update(rawDt);
+
+  /* ---- draw ---- */
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, W, H);
+
+  drawBackground();
+
+  ctx.save();
+  worldToScreen();
+  const inVortex = state === 'finale' && finale.phase === 1;
+  if (!inVortex) {
+    // hidden only mid-vortex; the zoomed-out ending shows the whole conquered chart
+    drawDeco();
+    drawGrid();
+    drawTerrain();
+    drawTargetLine();
+  }
+  drawParticles();
+  drawBike();
+  drawRings();
+  ctx.restore();
+
+  if (!vign) makeVignette();
+  ctx.drawImage(vign, 0, 0);
+
+  if (state === 'title') drawTitle();
+  drawHUD();
+  drawCards();
+  if (state === 'finale') drawFinaleText();
+
+  if (flash > 0) {
+    ctx.globalAlpha = flash * (REDUCED ? 0.3 : 0.85);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+}
+
+reset(false);
+// debug: ?sim=<seconds> fast-forwards the simulation deterministically (for testing)
+const DBG_SIM = parseFloat(qp.get('sim') || '0');
+if (DBG_SIM > 0) for (let i = 0; i < DBG_SIM * 60; i++) update(1 / 60);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
